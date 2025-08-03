@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simulation d'Attaque MITM</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 0; 
+            padding: 0;
+        }
+        
+        /* Navbar styles */
+        .navbar {
+            background-color: #d32f2f;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .navbar ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            gap: 2rem;
+        }
+        
+        .navbar li {
+            display: inline;
+        }
+        
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        
+        .navbar a:hover {
+            background-color: #b71c1c;
+        }
+        
+        .navbar a.active {
+            background-color: #b71c1c;
+            font-weight: bold;
+        }
+        
+        /* Content styles */
+        .container { 
+            max-width: 800px; 
+            margin: 2rem auto; 
+            padding: 0 2rem;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            padding: 1rem;
+            border-radius: 4px;
+            border-left: 4px solid #ffc107;
+            margin: 1rem 0;
+        }
+        
+        .danger {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 1rem;
+            border-radius: 4px;
+            border-left: 4px solid #dc3545;
+            margin: 1rem 0;
+        }
+        
+        .registry-info {
+            background: #f5f5f5;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #007cba;
+        }
+        
+        .form-group {
+            margin: 1rem 0;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: bold;
+        }
+        
+        .form-group select,
+        .form-group input[type="file"] {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .btn {
+            background: #d32f2f;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        
+        .btn:hover {
+            background: #b71c1c;
+        }
+        
+        .btn-success {
+            background: #28a745;
+        }
+        
+        .btn-success:hover {
+            background: #218838;
+        }
+        
+        .error { 
+            color: #d32f2f; 
+            background: #ffebee;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 4px solid #d32f2f;
+        }
+        
+        .success { 
+            color: #2e7d32; 
+            background: #e8f5e8;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 4px solid #2e7d32;
+        }
+        
+        .attack-result {
+            background: #ffebee;
+            color: #d32f2f;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #d32f2f;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <ul>
+            <li><a href="{% url 'home' %}">📝 Inscription</a></li>
+            <li><a href="{% url 'list_documents' %}">🔐 Signature</a></li>
+            <li><a href="{% url 'verify_signature' %}">✅ Vérification</a></li>
+            <li><a href="#" class="active">🚨 Attaque MITM</a></li>
+        </ul>
+    </nav>
+
+    <!-- Content -->
+    <div class="container">
+        <h1>🚨 Simulation d'Attaque MITM</h1>
+
+        <h2>📋 Registre Actuel</h2>
+        <div class="registry-info">
+            <h3>Utilisateurs enregistrés :</h3>
+            {% for username, key in current_registry.items %}
+                <p><strong>{{ username }}</strong> : {{ key|slice:":50" }}...</p>
+            {% empty %}
+                <p>Aucun utilisateur dans le registre.</p>
+            {% endfor %}
+        </div>
+
+        <h2>🎯 Simuler l'Attaque Complète</h2>
+        <div class="warning">
+            <p><strong>Scénario :</strong> Un attaquant remplace la clé publique d'un utilisateur légitime par sa propre clé publique dans le registre, puis signe un document en se faisant passer pour cet utilisateur.</p>
+        </div>
+
+        <form id="mitmForm" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="form-group">
+                <label for="target_user">Utilisateur Cible :</label>
+                <select id="target_user" name="target_user" required>
+                    <option value="">-- Sélectionner un utilisateur --</option>
+                    {% for username in current_registry.keys %}
+                        <option value="{{ username }}">{{ username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="attacker_public_key">Clé Publique de l'Attaquant (.pem) :</label>
+                <input type="file" id="attacker_public_key" name="attacker_public_key" accept=".pem" required>
+                <small>Uploadez une clé publique qui remplacera celle de l'utilisateur cible</small>
+            </div>
+
+            <div class="form-group">
+                <label for="attacker_private_key">Clé Privée de l'Attaquant (.pem) :</label>
+                <input type="file" id="attacker_private_key" name="attacker_private_key" accept=".pem" required>
+                <small>Clé privée correspondant à la clé publique (pour signer un document)</small>
+            </div>
+
+            <div class="form-group">
+                <label for="document_to_sign">Document à signer :</label>
+                <select id="document_to_sign" name="document_to_sign" required>
+                    <option value="">-- Sélectionner un fichier --</option>
+                    <!-- Les fichiers seront chargés dynamiquement -->
+                </select>
+            </div>
+
+            <button type="submit" class="btn">🚨 Lancer l'Attaque MITM Complète</button>
+        </form>
+
+        <div id="result"></div>
+
+        <h2>🔄 Restauration</h2>
+        <p>Après la démonstration, vous pouvez restaurer le registre original :</p>
+        <button onclick="restoreRegistry()" class="btn btn-success">✅ Restaurer le Registre</button>
+
+        <div class="warning">
+            <h3>💡 Discussion</h3>
+            <p><strong>Question :</strong> Que faudrait-il ajouter pour éviter cette attaque ?</p>
+            <p><strong>Réponse :</strong> Des <strong>certificats numériques signés par une autorité de confiance</strong> qui garantissent l'authenticité des clés publiques.</p>
+        </div>
+    </div>
+
+    <script>
+        // Charger les fichiers .txt disponibles
+        window.onload = function() {
+            fetch('{% url "list_documents" %}')
+                .then(response => response.text())
+                .then(html => {
+                    // Extraire les noms de fichiers du HTML retourné
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    const fileItems = doc.querySelectorAll('.file-item h3');
+                    const select = document.getElementById('document_to_sign');
+                    
+                    fileItems.forEach(item => {
+                        const filename = item.textContent.replace('📄 ', '');
+                        const option = document.createElement('option');
+                        option.value = filename;
+                        option.textContent = filename;
+                        select.appendChild(option);
+                    });
+                });
+        };
+
+        document.getElementById('mitmForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            // Afficher un message de chargement
+            document.getElementById('result').innerHTML = '<p>Simulation de l\'attaque complète en cours...</p>';
+
+            fetch('{% url "simulate_mitm" %}', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    let warningText = data.warning ? `<p><em>${data.warning}</em></p>` : '';
+                    let signatureInfo = data.signature_created ? `
+                        <div style="background: #e8f5e8; padding: 10px; border-radius: 4px; margin: 10px 0;">
+                            <h4>✅ Nouvelle signature créée !</h4>
+                            <p><strong>Fichier signé :</strong> ${data.signed_file}</p>
+                            <p><strong>Signature sauvée :</strong> ${data.signature_file}</p>
+                            <p><strong>Signé au nom de :</strong> ${data.details.target_user} (mais avec la clé de l'attaquant)</p>
+                        </div>
+                    ` : '';
+                    
+                    document.getElementById('result').innerHTML = `
+                        <div class="attack-result">
+                            <h3>${data.message}</h3>
+                            <p><strong>Utilisateur ciblé :</strong> ${data.details.target_user}</p>
+                            <p><strong>Ancienne clé :</strong> ${data.details.original_key_preview}</p>
+                            <p><strong>Nouvelle clé :</strong> ${data.details.new_key_preview}</p>
+                            ${warningText}
+                            ${signatureInfo}
+                            <br>
+                            <p>🧪 <strong>Test :</strong> Allez maintenant dans la section "Vérification" pour voir que cette nouvelle signature sera VALIDE (car elle utilise les clés correspondantes) !</p>
+                        </div>
+                    `;
+                } else {
+                    document.getElementById('result').innerHTML = 
+                        `<div class="error">❌ ${data.error}</div>`;
+                }
+            })
+            .catch(error => {
+                document.getElementById('result').innerHTML = 
+                    `<div class="error">❌ Erreur de connexion: ${error}</div>`;
+            });
+        });
+
+        function restoreRegistry() {
+            fetch('{% url "restore_registry" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('result').innerHTML = 
+                        `<div class="success">${data.message}</div>`;
+                    setTimeout(() => {
+                        location.reload(); // Recharger la page pour voir le registre restauré
+                    }, 2000);
+                } else {
+                    document.getElementById('result').innerHTML = 
+                        `<div class="error">❌ ${data.error}</div>`;
+                }
+            })
+            .catch(error => {
+                document.getElementById('result').innerHTML = 
+                    `<div class="error">❌ Erreur de connexion: ${error}</div>`;
+            });
+        }
+    </script>
+</body>
+</html>

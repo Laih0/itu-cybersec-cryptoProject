@@ -123,13 +123,16 @@ def sign_document_view(request):
 
 def verify_signature_view(request):
     """Affiche la page de vérification des signatures"""
-    # Chercher les fichiers .sig disponibles
+    # Chercher les fichiers .sig disponibles (y compris .mitm_attack.sig)
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     sig_files = []
     
     for file in os.listdir(base_dir):
         if file.endswith('.sig'):
             sig_files.append(file)
+    
+    # Trier pour mettre les fichiers d'attaque en évidence
+    sig_files.sort(key=lambda x: (not x.endswith('.mitm_attack.sig'), x))
     
     return render(request, 'ca_app/verify.html', {'sig_files': sig_files})
 
@@ -159,8 +162,14 @@ def verify_document_view(request):
             if not all([username, timestamp, signature_b64]):
                 return JsonResponse({'error': 'Fichier de signature invalide'}, status=400)
             
-            # Trouver le fichier original (enlever .sig)
-            original_filename = sig_filename.replace('.sig', '')
+            # Trouver le fichier original (gérer les cas .sig et .mitm_attack.sig)
+            if sig_filename.endswith('.mitm_attack.sig'):
+                original_filename = sig_filename.replace('.mitm_attack.sig', '')
+            elif sig_filename.endswith('.sig'):
+                original_filename = sig_filename.replace('.sig', '')
+            else:
+                return JsonResponse({'error': 'Format de fichier de signature non reconnu'}, status=400)
+                
             original_path = os.path.join(base_dir, original_filename)
             
             if not os.path.exists(original_path):
@@ -222,5 +231,143 @@ def verify_document_view(request):
             
         except Exception as e:
             return JsonResponse({'error': f'Erreur lors de la vérification: {str(e)}'}, status=500)
+    
+    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+
+def mitm_attack_view(request):
+    """Affiche la page de simulation d'attaque MITM"""
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    
+    # Lire le registre actuel
+    registry_path = os.path.join(base_dir, "registry.json")
+    current_registry = {}
+    if os.path.exists(registry_path):
+        with open(registry_path, 'r') as f:
+            current_registry = json.load(f)
+    
+    return render(request, 'ca_app/mitm.html', {'current_registry': current_registry})
+
+def simulate_mitm_view(request):
+    """Simule une attaque MITM complète en remplaçant une clé publique et signant un document"""
+    if request.method == 'POST':
+        target_user = request.POST.get('target_user')
+        attacker_public_key = request.FILES.get('attacker_public_key')
+        attacker_private_key = request.FILES.get('attacker_private_key')
+        document_to_sign = request.POST.get('document_to_sign')
+        
+        if not all([target_user, attacker_public_key, attacker_private_key, document_to_sign]):
+            return JsonResponse({'error': 'Tous les champs sont requis pour une attaque complète'}, status=400)
+        
+        try:
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            registry_path = os.path.join(base_dir, "registry.json")
+            
+            # Lire le registre actuel
+            if os.path.exists(registry_path):
+                with open(registry_path, 'r') as f:
+                    registry = json.load(f)
+            else:
+                registry = {}
+            
+            # Sauvegarder l'ancienne clé (pour restauration)
+            backup_path = os.path.join(base_dir, "registry_backup.json")
+            with open(backup_path, 'w') as f:
+                json.dump(registry, f, indent=2)
+            
+            # ÉTAPE 1: Remplacer la clé publique par celle de l'attaquant
+            attacker_key_pem = attacker_public_key.read().decode('utf-8')
+            original_key = registry.get(target_user, "Non trouvé")
+            registry[target_user] = attacker_key_pem
+            
+            # Sauvegarder le registre compromis
+            with open(registry_path, 'w') as f:
+                json.dump(registry, f, indent=2)
+            
+            # ÉTAPE 2: Signer un document avec la clé privée de l'attaquant
+            document_path = os.path.join(base_dir, document_to_sign)
+            if not os.path.exists(document_path):
+                return JsonResponse({'error': f'Document {document_to_sign} non trouvé'}, status=404)
+            
+            # Lire le contenu du document
+            with open(document_path, 'rb') as f:
+                file_content = f.read()
+            
+            # Calculer le hash SHA-256
+            hash_value = hashlib.sha256(file_content).digest()
+            
+            # Charger la clé privée de l'attaquant
+            attacker_private_pem = attacker_private_key.read()
+            private_key = serialization.load_pem_private_key(attacker_private_pem, password=None)
+            
+            # Signer le hash avec la clé privée de l'attaquant
+            signature = private_key.sign(
+                hash_value,
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH
+                ),
+                hashes.SHA256()
+            )
+            
+            # Encoder la signature en base64
+            signature_b64 = base64.b64encode(signature).decode('utf-8')
+            
+            # Créer les métadonnées de signature (en se faisant passer pour target_user)
+            signature_data = {
+                "user": target_user,  # ← L'attaquant se fait passer pour target_user !
+                "timestamp": datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "signature": signature_b64
+            }
+            
+            # Sauvegarder dans un fichier .sig avec un nom spécial pour l'attaque
+            sig_filename = f"{document_to_sign}.mitm_attack.sig"
+            sig_path = os.path.join(base_dir, sig_filename)
+            
+            with open(sig_path, 'w') as f:
+                json.dump(signature_data, f, indent=2)
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'🚨 ATTAQUE MITM COMPLÈTE RÉUSSIE !',
+                'details': {
+                    'target_user': target_user,
+                    'original_key_preview': original_key[:50] + "..." if len(original_key) > 50 else original_key,
+                    'new_key_preview': attacker_key_pem[:50] + "..." if len(attacker_key_pem) > 50 else attacker_key_pem
+                },
+                'signature_created': True,
+                'signed_file': document_to_sign,
+                'signature_file': sig_filename,
+                'warning': f'⚠️ L\'attaquant a signé {document_to_sign} en se faisant passer pour {target_user}. Cette signature sera VALIDE car elle utilise les clés correspondantes dans le registre compromis !'
+            })
+            
+        except Exception as e:
+            return JsonResponse({'error': f'Erreur lors de la simulation: {str(e)}'}, status=500)
+    
+    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+
+def restore_registry_view(request):
+    """Restaure le registre original"""
+    if request.method == 'POST':
+        try:
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            registry_path = os.path.join(base_dir, "registry.json")
+            backup_path = os.path.join(base_dir, "registry_backup.json")
+            
+            if os.path.exists(backup_path):
+                with open(backup_path, 'r') as f:
+                    backup_registry = json.load(f)
+                
+                with open(registry_path, 'w') as f:
+                    json.dump(backup_registry, f, indent=2)
+                
+                return JsonResponse({
+                    'success': True,
+                    'message': '✅ Registre restauré avec succès !'
+                })
+            else:
+                return JsonResponse({'error': 'Aucune sauvegarde trouvée'}, status=404)
+                
+        except Exception as e:
+            return JsonResponse({'error': f'Erreur lors de la restauration: {str(e)}'}, status=500)
     
     return JsonResponse({'error': 'Méthode non autorisée'}, status=405)

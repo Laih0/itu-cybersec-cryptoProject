@@ -105,6 +105,7 @@
             <li><a href="{% url 'home' %}">📝 Inscription</a></li>
             <li><a href="{% url 'list_documents' %}">🔐 Signature</a></li>
             <li><a href="#" class="active">✅ Vérification</a></li>
+            <li><a href="{% url 'mitm_attack' %}">🚨 Attaque MITM</a></li>
         </ul>
     </nav>
 
@@ -118,7 +119,11 @@
             {% for file in sig_files %}
                 <div class="file-item">
                     <h3>🔒 {{ file }}</h3>
-                    <p><strong>Document original :</strong> {{ file|slice:":-4" }}</p>
+                    {% if ".mitm_attack.sig" in file %}
+                        <p><strong>Document original :</strong> {{ file|slice:":-16" }} <span style="color: #d32f2f;">(⚠️ Fichier d'attaque MITM)</span></p>
+                    {% else %}
+                        <p><strong>Document original :</strong> {{ file|slice:":-4" }}</p>
+                    {% endif %}
                     <button class="btn" onclick="verifySignature('{{ file }}')">Vérifier cette signature</button>
                 </div>
             {% endfor %}
