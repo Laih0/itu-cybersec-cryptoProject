@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Signature de Documents</title>
+    <title>Vérification de Signatures</title>
     <style>
         body { 
             font-family: Arial, sans-serif; 
@@ -69,13 +69,32 @@
         }
         .btn:hover { background: #005a87; }
         .form-group { margin: 10px 0; }
-        .error { color: red; }
-        .success { color: green; }
-        input[type="text"] { 
-            padding: 8px; 
-            border: 1px solid #ddd; 
-            border-radius: 4px; 
-            width: 200px;
+        .error { 
+            color: #d32f2f; 
+            background: #ffebee;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 4px solid #d32f2f;
+        }
+        .success { 
+            color: #2e7d32; 
+            background: #e8f5e8;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 4px solid #2e7d32;
+        }
+        .invalid { 
+            color: #d32f2f; 
+            background: #ffebee;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 4px solid #d32f2f;
+        }
+        .details {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
         }
     </style>
 </head>
@@ -84,68 +103,70 @@
     <nav class="navbar">
         <ul>
             <li><a href="{% url 'home' %}">📝 Inscription</a></li>
-            <li><a href="#" class="active">🔐 Signature</a></li>
-            <li><a href="{% url 'verify_signature' %}">✅ Vérification</a></li>
+            <li><a href="{% url 'list_documents' %}">🔐 Signature</a></li>
+            <li><a href="#" class="active">✅ Vérification</a></li>
         </ul>
     </nav>
 
     <!-- Content -->
     <div class="container">
-        <h1>🔐 Signature de Documents</h1>
+        <h1>✅ Vérification de Signatures</h1>
         
-        <div class="form-group">
-            <label for="username">Nom d'utilisateur :</label>
-            <input type="text" id="username" placeholder="Entrez votre nom d'utilisateur" required>
-        </div>
-
-        <h2>Documents disponibles (.txt) :</h2>
+        <h2>Fichiers de signature disponibles (.sig) :</h2>
         
-        {% if txt_files %}
-            {% for file in txt_files %}
+        {% if sig_files %}
+            {% for file in sig_files %}
                 <div class="file-item">
-                    <h3>📄 {{ file }}</h3>
-                    <button class="btn" onclick="signDocument('{{ file }}')">Signer ce document</button>
+                    <h3>🔒 {{ file }}</h3>
+                    <p><strong>Document original :</strong> {{ file|slice:":-4" }}</p>
+                    <button class="btn" onclick="verifySignature('{{ file }}')">Vérifier cette signature</button>
                 </div>
             {% endfor %}
         {% else %}
-            <p>Aucun fichier .txt trouvé dans le répertoire.</p>
+            <p>Aucun fichier de signature (.sig) trouvé dans le répertoire.</p>
+            <p>Signez d'abord un document dans la section <a href="{% url 'list_documents' %}">🔐 Signature</a>.</p>
         {% endif %}
 
         <div id="result"></div>
     </div>
 
     <script>
-        function signDocument(filename) {
-            const username = document.getElementById('username').value;
-            if (!username) {
-                document.getElementById('result').innerHTML = '<p class="error">Veuillez entrer votre nom d\'utilisateur</p>';
-                return;
-            }
-
+        function verifySignature(sigFilename) {
             // Afficher un message de chargement
-            document.getElementById('result').innerHTML = '<p>Signature en cours...</p>';
+            document.getElementById('result').innerHTML = '<p>Vérification en cours...</p>';
 
-            fetch('{% url "sign_document" %}', {
+            fetch('{% url "verify_document" %}', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                     'X-CSRFToken': '{{ csrf_token }}'
                 },
-                body: `filename=${encodeURIComponent(filename)}&username=${encodeURIComponent(username)}`
+                body: `sig_filename=${encodeURIComponent(sigFilename)}`
             })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    document.getElementById('result').innerHTML = 
-                        `<p class="success">✅ ${data.message}</p>`;
+                    let resultClass = data.valid ? 'success' : 'invalid';
+                    let icon = data.valid ? '✅' : '❌';
+                    
+                    document.getElementById('result').innerHTML = `
+                        <div class="${resultClass}">
+                            <h3>${icon} ${data.message}</h3>
+                            <div class="details">
+                                <p><strong>Utilisateur :</strong> ${data.details.user}</p>
+                                <p><strong>Timestamp :</strong> ${data.details.timestamp}</p>
+                                <p><strong>Fichier :</strong> ${data.details.file}</p>
+                            </div>
+                        </div>
+                    `;
                 } else {
                     document.getElementById('result').innerHTML = 
-                        `<p class="error">❌ ${data.error}</p>`;
+                        `<div class="error">❌ ${data.error}</div>`;
                 }
             })
             .catch(error => {
                 document.getElementById('result').innerHTML = 
-                    `<p class="error">❌ Erreur de connexion: ${error}</p>`;
+                    `<div class="error">❌ Erreur de connexion: ${error}</div>`;
             });
         }
     </script>

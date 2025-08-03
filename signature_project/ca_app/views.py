@@ -10,7 +10,12 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from .forms import PublicKeyUploadForm
 
-def register_user(username, public_key_pem, registry_path="registry.json"):
+def register_user(username, public_key_pem, registry_path=None):
+    if registry_path is None:
+        # Utiliser le même répertoire de base que les autres fichiers
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        registry_path = os.path.join(base_dir, "registry.json")
+    
     try:
         with open(registry_path, "r") as f:
             registry = json.load(f)
@@ -113,5 +118,109 @@ def sign_document_view(request):
             
         except Exception as e:
             return JsonResponse({'error': f'Erreur lors de la signature: {str(e)}'}, status=500)
+    
+    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+
+def verify_signature_view(request):
+    """Affiche la page de vérification des signatures"""
+    # Chercher les fichiers .sig disponibles
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    sig_files = []
+    
+    for file in os.listdir(base_dir):
+        if file.endswith('.sig'):
+            sig_files.append(file)
+    
+    return render(request, 'ca_app/verify.html', {'sig_files': sig_files})
+
+def verify_document_view(request):
+    """Gère la vérification d'une signature"""
+    if request.method == 'POST':
+        sig_filename = request.POST.get('sig_filename')
+        
+        if not sig_filename:
+            return JsonResponse({'error': 'Nom de fichier de signature requis'}, status=400)
+        
+        try:
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            
+            # Charger le fichier de signature
+            sig_path = os.path.join(base_dir, sig_filename)
+            if not os.path.exists(sig_path):
+                return JsonResponse({'error': 'Fichier de signature non trouvé'}, status=404)
+            
+            with open(sig_path, 'r') as f:
+                signature_data = json.load(f)
+            
+            username = signature_data.get('user')
+            timestamp = signature_data.get('timestamp')
+            signature_b64 = signature_data.get('signature')
+            
+            if not all([username, timestamp, signature_b64]):
+                return JsonResponse({'error': 'Fichier de signature invalide'}, status=400)
+            
+            # Trouver le fichier original (enlever .sig)
+            original_filename = sig_filename.replace('.sig', '')
+            original_path = os.path.join(base_dir, original_filename)
+            
+            if not os.path.exists(original_path):
+                return JsonResponse({'error': f'Fichier original {original_filename} non trouvé'}, status=404)
+            
+            # Lire le fichier original
+            with open(original_path, 'rb') as f:
+                file_content = f.read()
+            
+            # Calculer le hash SHA-256
+            hash_value = hashlib.sha256(file_content).digest()
+            
+            # Charger la clé publique du registre
+            registry_path = os.path.join(base_dir, "registry.json")
+            if not os.path.exists(registry_path):
+                return JsonResponse({'error': 'Registre des clés publiques non trouvé'}, status=404)
+            
+            with open(registry_path, 'r') as f:
+                registry = json.load(f)
+            
+            if username not in registry:
+                return JsonResponse({'error': f'Clé publique pour {username} non trouvée dans le registre'}, status=404)
+            
+            public_key_pem = registry[username]
+            
+            # Charger la clé publique
+            public_key = serialization.load_pem_public_key(public_key_pem.encode('utf-8'))
+            
+            # Décoder la signature
+            signature = base64.b64decode(signature_b64)
+            
+            # Vérifier la signature
+            try:
+                public_key.verify(
+                    signature,
+                    hash_value,
+                    padding.PSS(
+                        mgf=padding.MGF1(hashes.SHA256()),
+                        salt_length=padding.PSS.MAX_LENGTH
+                    ),
+                    hashes.SHA256()
+                )
+                verification_result = True
+                message = "Signature VALIDE"
+            except Exception:
+                verification_result = False
+                message = "Signature INVALIDE"
+            
+            return JsonResponse({
+                'success': True,
+                'valid': verification_result,
+                'message': message,
+                'details': {
+                    'user': username,
+                    'timestamp': timestamp,
+                    'file': original_filename
+                }
+            })
+            
+        except Exception as e:
+            return JsonResponse({'error': f'Erreur lors de la vérification: {str(e)}'}, status=500)
     
     return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
