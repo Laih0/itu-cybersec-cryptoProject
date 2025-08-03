@@ -1,0 +1,7 @@
+Ceci est un document de test pour la signature électronique.
+
+Ce fichier contient du texte qui sera signé avec une clé privée RSA.
+La signature permettra de vérifier l'authenticité et l'intégrité du document.
+
+Date de création : 3 août 2025
+Auteur : Système de signature électronique
