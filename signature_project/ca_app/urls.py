@@ -11,4 +11,7 @@ urlpatterns = [
     path('mitm/', views.mitm_attack_view, name='mitm_attack'),
     path('simulate-mitm/', views.simulate_mitm_view, name='simulate_mitm'),
     path('restore-registry/', views.restore_registry_view, name='restore_registry'),
+    path('certificates/', views.certificate_upload_view, name='certificate_upload'),
+    path('create-certificate/', views.create_certificate_view, name='create_certificate'),
+    path('register-with-certificate/', views.register_with_certificate_view, name='register_with_certificate'),
 ]

@@ -371,3 +371,160 @@ def restore_registry_view(request):
             return JsonResponse({'error': f'Erreur lors de la restauration: {str(e)}'}, status=500)
     
     return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+
+def generate_certificate(username, public_key_pem):
+    """Génère un certificat signé par l'Autorité de Certification"""
+    try:
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        ca_private_path = os.path.join(base_dir, "ca_private.pem")
+        
+        if not os.path.exists(ca_private_path):
+            raise Exception("Clé privée de la CA non trouvée. Exécutez d'abord generate_ca_keys.py")
+        
+        # Charger la clé privée de la CA
+        with open(ca_private_path, 'rb') as f:
+            ca_private_key = serialization.load_pem_private_key(f.read(), password=None)
+        
+        # Créer le contenu à signer : hash(username + public_key)
+        content_to_sign = username + public_key_pem
+        content_hash = hashlib.sha256(content_to_sign.encode('utf-8')).digest()
+        
+        # Signer avec la clé privée de la CA
+        ca_signature = ca_private_key.sign(
+            content_hash,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        
+        # Encoder en base64
+        ca_signature_b64 = base64.b64encode(ca_signature).decode('utf-8')
+        
+        # Créer le certificat
+        certificate = {
+            "username": username,
+            "public_key": public_key_pem,
+            "CA_signature": ca_signature_b64,
+            "issued_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
+        }
+        
+        return certificate
+        
+    except Exception as e:
+        raise Exception(f"Erreur lors de la génération du certificat: {str(e)}")
+
+def verify_certificate(certificate):
+    """Vérifie un certificat avec la clé publique de la CA"""
+    try:
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        ca_public_path = os.path.join(base_dir, "ca_public.pem")
+        
+        if not os.path.exists(ca_public_path):
+            raise Exception("Clé publique de la CA non trouvée")
+        
+        # Charger la clé publique de la CA
+        with open(ca_public_path, 'rb') as f:
+            ca_public_key = serialization.load_pem_public_key(f.read())
+        
+        # Recréer le contenu qui a été signé
+        content_to_verify = certificate["username"] + certificate["public_key"]
+        content_hash = hashlib.sha256(content_to_verify.encode('utf-8')).digest()
+        
+        # Décoder la signature
+        ca_signature = base64.b64decode(certificate["CA_signature"])
+        
+        # Vérifier la signature de la CA
+        ca_public_key.verify(
+            ca_signature,
+            content_hash,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        
+        return True
+        
+    except Exception:
+        return False
+
+def certificate_upload_view(request):
+    """Affiche la page d'upload de certificats"""
+    return render(request, 'ca_app/certificate.html')
+
+def register_with_certificate_view(request):
+    """Enregistre un utilisateur avec un certificat"""
+    if request.method == 'POST':
+        certificate_file = request.FILES.get('certificate_file')
+        
+        if not certificate_file:
+            return JsonResponse({'error': 'Fichier de certificat requis'}, status=400)
+        
+        try:
+            # Lire le certificat
+            certificate_content = certificate_file.read().decode('utf-8')
+            certificate = json.loads(certificate_content)
+            
+            # Vérifier le certificat
+            if not verify_certificate(certificate):
+                return JsonResponse({'error': 'Certificat invalide - signature de la CA non vérifiée'}, status=400)
+            
+            # Enregistrer la clé publique si le certificat est valide
+            username = certificate["username"]
+            public_key_pem = certificate["public_key"]
+            
+            register_user(username, public_key_pem)
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'✅ Certificat valide ! Utilisateur {username} enregistré avec succès.',
+                'details': {
+                    'username': username,
+                    'issued_at': certificate.get('issued_at', 'Non spécifié')
+                }
+            })
+            
+        except json.JSONDecodeError:
+            return JsonResponse({'error': 'Format de certificat invalide'}, status=400)
+        except Exception as e:
+            return JsonResponse({'error': f'Erreur lors du traitement: {str(e)}'}, status=500)
+    
+    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)
+
+def create_certificate_view(request):
+    """Crée un nouveau certificat pour un utilisateur"""
+    if request.method == 'POST':
+        username = request.POST.get('username')
+        public_key_file = request.FILES.get('public_key_file')
+        
+        if not username or not public_key_file:
+            return JsonResponse({'error': 'Nom d\'utilisateur et clé publique requis'}, status=400)
+        
+        try:
+            public_key_pem = public_key_file.read().decode('utf-8')
+            
+            # Générer le certificat
+            certificate = generate_certificate(username, public_key_pem)
+            
+            # Sauvegarder le certificat
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            cert_filename = f"{username}_certificate.json"
+            cert_path = os.path.join(base_dir, cert_filename)
+            
+            with open(cert_path, 'w') as f:
+                json.dump(certificate, f, indent=2)
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'✅ Certificat créé pour {username} !',
+                'certificate_file': cert_filename,
+                'certificate': certificate
+            })
+            
+        except Exception as e:
+            return JsonResponse({'error': f'Erreur lors de la création: {str(e)}'}, status=500)
+    
+    return JsonResponse({'error': 'Méthode non autorisée'}, status=405)

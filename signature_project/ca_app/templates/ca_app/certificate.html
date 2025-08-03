@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Gestion des Certificats</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 0; 
+            padding: 0;
+        }
+        
+        /* Navbar styles */
+        .navbar {
+            background-color: #28a745;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .navbar ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            gap: 2rem;
+        }
+        
+        .navbar li {
+            display: inline;
+        }
+        
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+        
+        .navbar a:hover {
+            background-color: #218838;
+        }
+        
+        .navbar a.active {
+            background-color: #218838;
+            font-weight: bold;
+        }
+        
+        /* Content styles */
+        .container { 
+            max-width: 800px; 
+            margin: 2rem auto; 
+            padding: 0 2rem;
+        }
+        
+        .section {
+            background: #f8f9fa;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            border-left: 4px solid #28a745;
+        }
+        
+        .form-group {
+            margin: 1rem 0;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: bold;
+        }
+        
+        .form-group input[type="text"],
+        .form-group input[type="file"] {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .btn {
+            background: #28a745;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        
+        .btn:hover {
+            background: #218838;
+        }
+        
+        .btn-primary {
+            background: #007bff;
+        }
+        
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+        
+        .error { 
+            color: #d32f2f; 
+            background: #ffebee;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 4px solid #d32f2f;
+        }
+        
+        .success { 
+            color: #2e7d32; 
+            background: #e8f5e8;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 4px solid #2e7d32;
+        }
+        
+        .info {
+            background: #e3f2fd;
+            color: #1565c0;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #2196f3;
+            margin: 15px 0;
+        }
+        
+        .certificate-preview {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <ul>
+            <li><a href="{% url 'home' %}">📝 Inscription</a></li>
+            <li><a href="{% url 'list_documents' %}">🔐 Signature</a></li>
+            <li><a href="{% url 'verify_signature' %}">✅ Vérification</a></li>
+            <li><a href="{% url 'mitm_attack' %}">🚨 Attaque MITM</a></li>
+            <li><a href="#" class="active">📜 Certificats</a></li>
+        </ul>
+    </nav>
+
+    <!-- Content -->
+    <div class="container">
+        <h1>📜 Gestion des Certificats</h1>
+        
+        <div class="info">
+            <h3>🔐 Infrastructure à Clé Publique (PKI)</h3>
+            <p>Les certificats permettent de garantir l'authenticité des clés publiques grâce à une Autorité de Certification (CA) de confiance.</p>
+        </div>
+
+        <!-- Section 1: Créer un certificat -->
+        <div class="section">
+            <h2>🏭 1. Créer un Certificat</h2>
+            <p>L'Autorité de Certification crée un certificat en signant la clé publique d'un utilisateur.</p>
+            
+            <form id="createCertForm" enctype="multipart/form-data">
+                {% csrf_token %}
+                <div class="form-group">
+                    <label for="cert_username">Nom d'utilisateur :</label>
+                    <input type="text" id="cert_username" name="username" required placeholder="ex: user2">
+                </div>
+
+                <div class="form-group">
+                    <label for="user_public_key">Clé publique de l'utilisateur (.pem) :</label>
+                    <input type="file" id="user_public_key" name="public_key_file" accept=".pem" required>
+                </div>
+
+                <button type="submit" class="btn">📜 Créer le Certificat</button>
+            </form>
+        </div>
+
+        <!-- Section 2: Enregistrer avec certificat -->
+        <div class="section">
+            <h2>✅ 2. S'enregistrer avec un Certificat</h2>
+            <p>Un utilisateur peut s'enregistrer en fournissant un certificat valide au lieu d'une clé publique simple.</p>
+            
+            <form id="registerCertForm" enctype="multipart/form-data">
+                {% csrf_token %}
+                <div class="form-group">
+                    <label for="certificate_file">Fichier de certificat (.json) :</label>
+                    <input type="file" id="certificate_file" name="certificate_file" accept=".json" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary">🔒 S'enregistrer avec Certificat</button>
+            </form>
+        </div>
+
+        <div id="result"></div>
+
+        <div class="info">
+            <h3>💡 Avantages des Certificats</h3>
+            <ul>
+                <li><strong>Authenticité :</strong> La CA garantit que la clé appartient bien à l'utilisateur déclaré</li>
+                <li><strong>Intégrité :</strong> Toute modification du certificat est détectable</li>
+                <li><strong>Non-répudiation :</strong> L'utilisateur ne peut nier avoir demandé le certificat</li>
+                <li><strong>Protection contre MITM :</strong> Un attaquant ne peut pas créer de faux certificats</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Créer un certificat
+        document.getElementById('createCertForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            document.getElementById('result').innerHTML = '<p>Création du certificat en cours...</p>';
+
+            fetch('{% url "create_certificate" %}', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('result').innerHTML = `
+                        <div class="success">
+                            <h3>${data.message}</h3>
+                            <p><strong>Fichier :</strong> ${data.certificate_file}</p>
+                            <div class="certificate-preview">${JSON.stringify(data.certificate, null, 2)}</div>
+                        </div>
+                    `;
+                } else {
+                    document.getElementById('result').innerHTML = 
+                        `<div class="error">❌ ${data.error}</div>`;
+                }
+            })
+            .catch(error => {
+                document.getElementById('result').innerHTML = 
+                    `<div class="error">❌ Erreur de connexion: ${error}</div>`;
+            });
+        });
+
+        // S'enregistrer avec certificat
+        document.getElementById('registerCertForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            document.getElementById('result').innerHTML = '<p>Vérification du certificat en cours...</p>';
+
+            fetch('{% url "register_with_certificate" %}', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('result').innerHTML = `
+                        <div class="success">
+                            <h3>${data.message}</h3>
+                            <p><strong>Utilisateur :</strong> ${data.details.username}</p>
+                            <p><strong>Émis le :</strong> ${data.details.issued_at}</p>
+                        </div>
+                    `;
+                } else {
+                    document.getElementById('result').innerHTML = 
+                        `<div class="error">❌ ${data.error}</div>`;
+                }
+            })
+            .catch(error => {
+                document.getElementById('result').innerHTML = 
+                    `<div class="error">❌ Erreur de connexion: ${error}</div>`;
+            });
+        });
+    </script>
+</body>
+</html>
